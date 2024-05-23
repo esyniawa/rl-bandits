@@ -1,10 +1,19 @@
+import os.path
+
 import numpy as np
+
+import matplotlib.animation as animation
+import matplotlib.pyplot as plt
 
 
 class NArmedBandit:
-    def __init__(self, n_arms, mu: float = 0, sigma: float = 1, seed: None | int = None):
+    def __init__(self, n_arms, rewards: list | tuple | None = None, seed: None | int = None):
         self.n_arms = n_arms
-        self.rewards = np.random.RandomState(seed).normal(mu, sigma, n_arms)
+        if rewards is None:
+            self.rewards = np.random.RandomState(seed).random(self.n_arms)
+        else:
+            assert len(rewards) == n_arms, 'The rewards vector must have the same length as the number of arms'
+            self.rewards = rewards
 
     def pull(self, arm):
         return np.random.rand() < self.rewards[arm]
@@ -43,13 +52,19 @@ class NArmedBandit:
     def evaluate(self,
                  strategy: str,
                  num_iterations: int = 1000,
-                 seed=None, **kwargs):
+                 seed: int | None = None,
+                 animate: bool = False,
+                 **kwargs):
 
         estimates = np.zeros(self.n_arms)
         counts = np.zeros(self.n_arms)
         rewards = []
         np.random.seed(seed)
-        for _ in range(num_iterations):
+
+        if animate:
+            estimates_trajectory = np.zeros((num_iterations, self.n_arms))
+
+        for i in range(num_iterations):
 
             # switch
             if strategy == 'softmax':
@@ -72,5 +87,35 @@ class NArmedBandit:
             counts[selected_arm] += 1
             estimates[selected_arm] += (reward - estimates[selected_arm]) / counts[selected_arm]
 
-        return np.mean(rewards), np.mean(rewards) / np.amax(self.rewards)
+            if animate:
+                estimates_trajectory[i, :] = estimates
+
+        if animate:
+
+            fig, ax = plt.subplots()
+
+            # plotting
+            x_axis = np.arange(self.n_arms) + 1
+            ax.bar(x=x_axis, height=self.rewards, width=0.5, zorder=1, alpha=0.3, color='b')
+            l = ax.bar(x=x_axis, height=estimates_trajectory[0], width=0.5, zorder=2, alpha=0.3, color='r')
+
+            ax.set_ylabel('Estimates')
+            ax.set_xlabel('Arms', loc='right')
+
+            def update_animate(t):
+                for j, bar in enumerate(l):
+                    bar.set_height(estimates_trajectory[t, j])
+                return l
+
+
+            ani = animation.FuncAnimation(fig, update_animate, frames=np.arange(0, num_iterations-1))
+            writer = animation.FFMpegWriter(fps=4)
+
+            if not os.path.exists("videos/"):
+                os.mkdir("videos/")
+            ani.save('videos/trajectory_' + strategy + '.mp4', writer=writer)
+            plt.close(fig)
+
+        else:
+            return np.mean(rewards), np.mean(rewards) / np.amax(self.rewards)
 
